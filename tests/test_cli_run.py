@@ -1,5 +1,6 @@
 """Tests for stolgo.cli.main."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ def test_cli_help():
     proc = subprocess.run(
         [str(python), "-m", "stolgo.cli.main", "--help"],
         cwd=repo,
+        env={**os.environ, "PYTHONPATH": str(repo / "lib")},
         capture_output=True,
         text=True,
         check=False,
