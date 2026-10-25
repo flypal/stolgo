@@ -5,7 +5,8 @@ from stolgo.core.engine import Backtest, Engine
 from stolgo.core.exceptions import StolgoError
 from stolgo.core.sweep import parameter_sweep
 from stolgo.core.types import Bar, Fill, Order, OrderIntent, OrderType, Position, Side
-from stolgo.data import Bandl, BandlDataSource, load
+from stolgo.data import Bandl, BandlDataSource, TqSdk, TqSdkDataSource, load
+from stolgo.instrument import Future, Instrument, Spot
 from stolgo.report.result import RunResult
 from stolgo.signals.pipeline import Pipeline
 from stolgo.strategy import Context, Strategy
@@ -19,6 +20,8 @@ __all__ = [
     "Context",
     "Engine",
     "Fill",
+    "Future",
+    "Instrument",
     "Order",
     "OrderIntent",
     "OrderType",
@@ -27,8 +30,11 @@ __all__ = [
     "RunConfig",
     "RunResult",
     "Side",
+    "Spot",
     "StolgoError",
     "Strategy",
+    "TqSdk",
+    "TqSdkDataSource",
     "load",
     "parameter_sweep",
     "trade",

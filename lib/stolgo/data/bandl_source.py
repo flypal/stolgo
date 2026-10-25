@@ -16,6 +16,7 @@ import pandas as pd
 from stolgo.core.exceptions import DataError
 from stolgo.data.cache import ParquetCache
 from stolgo.data.normalize import normalize_ohlcv
+from stolgo.instrument.base import Instrument, Spot
 
 
 class BandlDataSource:
@@ -85,6 +86,9 @@ class BandlDataSource:
         df = normalize_ohlcv(raw, symbol=symbol)
         self._cache.put(key, df)
         return df
+
+    def instrument(self, symbol: str) -> Instrument:
+        return Spot(symbol=symbol)
 
 
 # Preferred public name (``from stolgo import Bandl``).

@@ -62,7 +62,10 @@ def compute_metrics(
 
     turnover = 0.0
     if not trades.empty and "qty" in trades.columns:
-        traded_notional = float((trades["qty"] * (trades["entry_price"] + trades["exit_price"])).sum())
+        multiplier = trades["multiplier"] if "multiplier" in trades.columns else 1.0
+        traded_notional = float(
+            (trades["qty"] * multiplier * (trades["entry_price"] + trades["exit_price"])).sum()
+        )
         avg_equity = float(equity.mean()) if len(equity) else 0.0
         turnover = traded_notional / avg_equity if avg_equity > 0 else 0.0
 

@@ -84,7 +84,7 @@ def trades(trades_df) -> list[dict]:
                 "qty": float(row["qty"]),
                 "pnl": pnl,
                 "r": round(float(row.get("r_multiple", 0.0)), 2),
-                "side": "Long",
+                "side": "Short" if row.get("side") == "short" else "Long",
                 "tag": row.get("tag") or "",
                 "pnlClass": "positive" if pnl >= 0 else "negative",
             }

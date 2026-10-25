@@ -23,11 +23,13 @@ class SimBroker:
         commission: CommissionModel,
         *,
         fill_on: Literal["next_open", "close"] = "next_open",
+        multiplier: float = 1.0,
     ) -> None:
         self._fill_model = fill_model
         self._slippage = slippage
         self._commission = commission
         self._fill_on = fill_on
+        self._multiplier = multiplier
         self._pending: list[Order] = []
         self._book = OrderBook()
         self._seq = 0
@@ -68,7 +70,7 @@ class SimBroker:
 
     def _make_fill(self, order: Order, bar: Bar, price: float, bar_index: int) -> FillEvent:
         px = self._slippage.adjust(order.side, price, order.qty)
-        fee = self._commission.fee(order.side, px, order.qty)
+        fee = self._commission.fee(order.side, px * self._multiplier, order.qty)
         fill = Fill(
             fill_id=self._next_id(),
             order_id=order.order_id,

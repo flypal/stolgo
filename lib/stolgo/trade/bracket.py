@@ -44,6 +44,7 @@ def _target(entry: float, stop: float, rr: tuple[int, int], side: Side) -> float
 
 
 def _size(
+    ctx: Context,
     entry: float,
     stop: float,
     size_risk_pct: float,
@@ -52,11 +53,11 @@ def _size(
 ) -> float:
     if qty is not None:
         return qty
-    risk_per_unit = abs(entry - stop)
+    risk_per_unit = abs(entry - stop) * ctx.instrument.multiplier
     if risk_per_unit <= 0:
         return 0.0
     dollar_risk = cash * size_risk_pct
-    return dollar_risk / risk_per_unit
+    return ctx.instrument.round_qty(dollar_risk / risk_per_unit)
 
 
 def long(
@@ -73,7 +74,7 @@ def long(
     stop_px = _stop_price(ctx, stop, entry, Side.BUY)
     if entry <= stop_px:
         return None
-    q = _size(entry, stop_px, size_risk_pct, qty, cash)
+    q = _size(ctx, entry, stop_px, size_risk_pct, qty, cash)
     if q <= 0:
         return None
     target = _target(entry, stop_px, rr, Side.BUY)
@@ -95,7 +96,7 @@ def short(
     stop_px = _stop_price(ctx, stop, entry, Side.SELL)
     if entry >= stop_px:
         return None
-    q = _size(entry, stop_px, size_risk_pct, qty, cash)
+    q = _size(ctx, entry, stop_px, size_risk_pct, qty, cash)
     if q <= 0:
         return None
     target = _target(entry, stop_px, rr, Side.SELL)

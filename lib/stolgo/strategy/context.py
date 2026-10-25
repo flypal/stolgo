@@ -11,6 +11,7 @@ import pandas as pd
 
 from stolgo.core.exceptions import LookaheadError
 from stolgo.core.types import OrderIntent, OrderType, Position, Side
+from stolgo.instrument.base import Instrument, Spot
 
 
 @dataclass
@@ -64,6 +65,7 @@ class Context:
     position: Position
     entries: np.ndarray | None = None
     exits: np.ndarray | None = None
+    instrument: Instrument = field(default_factory=Spot)
     _intents: list[OrderIntent] = field(default_factory=list)
 
     def buy(self, *, qty: float | None = None, size_pct: float | None = None, tag: str | None = None) -> OrderIntent:

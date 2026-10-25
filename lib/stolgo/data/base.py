@@ -13,7 +13,7 @@ from stolgo.core.exceptions import ModeNotSupportedError
 
 
 class DataSource(Protocol):
-    """Implementors: DataFrameSource, BandlDataSource, ParquetSource (future)."""
+    """Implementors: DataFrameSource, BandlDataSource, TqSdkDataSource, ParquetSource (future)."""
 
     def history(
         self,

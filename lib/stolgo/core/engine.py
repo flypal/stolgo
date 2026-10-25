@@ -10,8 +10,10 @@ import pandas as pd
 from stolgo.core.clock import SimClock
 from stolgo.core.config import RunConfig
 from stolgo.core.exceptions import ModeNotSupportedError
+from stolgo.core.types import Side
 from stolgo.data.base import DataSource
 from stolgo.data.normalize import bars_from_dataframe, normalize_ohlcv
+from stolgo.instrument.base import Instrument, Spot
 from stolgo.oms.commission import BpsCommission
 from stolgo.oms.fill_model import CloseFill, NextOpenFill
 from stolgo.oms.sim_broker import SimBroker
@@ -34,13 +36,20 @@ class Engine:
             )
         self._config = config
 
-    def run(self, strategy: Strategy, data: pd.DataFrame | DataSource) -> RunResult:
+    def run(
+        self,
+        strategy: Strategy,
+        data: pd.DataFrame | DataSource,
+        *,
+        instrument: Instrument | None = None,
+    ) -> RunResult:
         if isinstance(data, pd.DataFrame):
             df = normalize_ohlcv(data, symbol=self._config.symbol or "UNKNOWN")
         else:
             raise NotImplementedError("DataSource history slice requires symbol/interval in config")
 
         symbol = str(df.attrs.get("symbol", self._config.symbol or "UNKNOWN"))
+        inst = instrument or Spot(symbol=symbol)
         bars = bars_from_dataframe(df, symbol=symbol)
         arrays = {
             "open": df["open"].to_numpy(dtype=np.float64),
@@ -54,10 +63,11 @@ class Engine:
         broker = SimBroker(
             fill_model,
             BpsSlippage(self._config.slippage_bps),
-            BpsCommission(self._config.commission),
+            inst.commission or BpsCommission(self._config.commission),
             fill_on=self._config.fill_on,
+            multiplier=inst.multiplier,
         )
-        portfolio = Portfolio(self._config.cash, symbol=symbol)
+        portfolio = Portfolio(self._config.cash, symbol=symbol, instrument=inst)
 
         n = len(bars) - 1
         bar_index = pd.DatetimeIndex(df.index, tz="UTC")
@@ -73,6 +83,7 @@ class Engine:
                 _index=bar_index,
             ),
             position=portfolio.position,
+            instrument=inst,
         )
         strategy.on_start(ctx)
         n_bars = len(bars)
@@ -128,7 +139,18 @@ class Engine:
                 accepted = apply_risk(intent, portfolio, equity_vals, self._config)
                 if accepted is None:
                     continue
-                qty = resolve_qty(accepted, portfolio, bar.close, portfolio.cash)
+                capital = inst.sizing_capital(portfolio.cash, eq)
+                qty = resolve_qty(
+                    accepted, portfolio, bar.close, capital, multiplier=inst.multiplier
+                )
+                pending = sum(
+                    o.qty if o.side == Side.BUY else -o.qty for o in broker.open_orders()
+                )
+                qty = inst.round_qty(
+                    portfolio.clamp_order_qty(
+                        accepted.side, inst.round_qty(qty), bar.close, pending=pending
+                    )
+                )
                 if qty <= 0:
                     continue
                 order = broker.create_order(symbol, accepted.side, qty, accepted.order_type)
@@ -137,7 +159,7 @@ class Engine:
         strategy.on_end(ctx)
 
         equity = pd.Series(equity_vals, index=pd.DatetimeIndex(equity_index, tz="UTC"))
-        trades = build_trades_from_fills(fill_events)
+        trades = build_trades_from_fills(fill_events, multiplier=inst.multiplier)
         positions = pd.DataFrame(
             {"qty": position_qty_vals, "equity": equity_vals},
             index=equity.index,
@@ -145,7 +167,7 @@ class Engine:
         signals = pd.DataFrame()
 
         return RunResult(
-            params=self._config.model_dump(),
+            params={**self._config.model_dump(), "instrument": inst.describe()},
             trades=trades,
             equity=equity,
             positions=positions,
@@ -156,11 +178,19 @@ class Engine:
 
 
 class Backtest:
-    def __init__(self, strategy: Strategy, data: pd.DataFrame | DataSource, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        strategy: Strategy,
+        data: pd.DataFrame | DataSource,
+        *,
+        instrument: Instrument | None = None,
+        **kwargs: Any,
+    ) -> None:
         self._strategy = strategy
         self._data = data
+        self._instrument = instrument
         self._kwargs = kwargs
 
     def run(self) -> RunResult:
         cfg = RunConfig(**self._kwargs)
-        return Engine(cfg).run(self._strategy, self._data)
+        return Engine(cfg).run(self._strategy, self._data, instrument=self._instrument)

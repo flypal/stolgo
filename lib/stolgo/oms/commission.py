@@ -12,11 +12,23 @@ class CommissionModel(Protocol):
 
 
 class BpsCommission:
+    """Fee as a fraction of notional; ``price`` is per-unit contract value."""
+
     def __init__(self, rate: float) -> None:
         self._rate = rate
 
     def fee(self, side: Side, price: float, qty: float) -> float:
         return price * qty * self._rate
+
+
+class PerLotCommission:
+    """Fixed fee per lot/share, e.g. 3 元/手 for CN futures."""
+
+    def __init__(self, amount: float) -> None:
+        self._amount = amount
+
+    def fee(self, side: Side, price: float, qty: float) -> float:
+        return qty * self._amount
 
 
 class FlatCommission:

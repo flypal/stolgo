@@ -11,6 +11,7 @@ import pandas as pd
 
 from stolgo.core.config import RunConfig
 from stolgo.core.engine import Backtest
+from stolgo.instrument.base import Instrument
 from stolgo.strategy.base import Strategy
 from stolgo.report.result import RunResult
 
@@ -21,6 +22,7 @@ def parameter_sweep(
     data: pd.DataFrame,
     *,
     config: RunConfig | None = None,
+    instrument: Instrument | None = None,
     **run_kwargs: Any,
 ) -> pd.DataFrame:
     """Run backtest for each combination in ``param_grid``; return summary rows."""
@@ -36,7 +38,9 @@ def parameter_sweep(
     for combo in product(*values):
         params = dict(zip(keys, combo))
         strategy = strategy_factory(params)
-        result: RunResult = Backtest(strategy, data, **run_kwargs_clean).run()
+        result: RunResult = Backtest(
+            strategy, data, instrument=instrument, **run_kwargs_clean
+        ).run()
         row = {**params, **result.metrics}
         rows.append(row)
 
