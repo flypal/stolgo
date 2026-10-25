@@ -1,17 +1,103 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AreaSeries,
   CandlestickSeries,
   ColorType,
   CrosshairMode,
   HistogramSeries,
+  LineSeries,
   createChart,
   createSeriesMarkers,
 } from "lightweight-charts";
 import { chartColors } from "../../data/constants";
 import { dateLabel, money, percent, price, timeLabel } from "../../utils/formatters";
 
-export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade, theme }) {
+const EMA_PERIOD = 20;
+
+function emaLine(candles, period = EMA_PERIOD) {
+  if (!candles.length || period <= 0) return [];
+  const alpha = 2 / (period + 1);
+  const points = [{ time: candles[0].time, value: candles[0].close }];
+  for (let i = 1; i < candles.length; i += 1) {
+    const value = alpha * candles[i].close + (1 - alpha) * points[i - 1].value;
+    points.push({ time: candles[i].time, value });
+  }
+  return points;
+}
+
+function nearestBarIndex(candles, time) {
+  let low = 0;
+  let high = candles.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const value = candles[mid].time;
+    if (value === time) return mid;
+    if (value < time) low = mid + 1;
+    else high = mid - 1;
+  }
+  if (high < 0) return 0;
+  if (low >= candles.length) return candles.length - 1;
+  return time - candles[high].time <= candles[low].time - time ? high : low;
+}
+
+function visibleRangeForTrade(candles, trade) {
+  const last = candles.length - 1;
+  if (last < 0) return null;
+
+  const entry = nearestBarIndex(candles, trade.entryTime);
+  const exit = nearestBarIndex(candles, trade.exitTime);
+  const start = Math.min(entry, exit);
+  const end = Math.max(entry, exit);
+  const span = Math.max(end - start, 1);
+  let windowBars = Math.round(span / 0.46);
+  windowBars = Math.max(windowBars, span + 14, Math.min(22, last));
+  windowBars = Math.min(Math.max(windowBars, span), last);
+
+  const pad = Math.max(0, windowBars - span);
+  let from = start - Math.round(pad * 0.62);
+  let to = from + windowBars;
+  if (from < 0) {
+    to -= from;
+    from = 0;
+  }
+  if (to > last) {
+    from = Math.max(0, from - (to - last));
+    to = last;
+  }
+  from = Math.min(from, start);
+  to = Math.max(to, end);
+  return { from: from - 0.4, to: to + 0.65 };
+}
+
+function pinChartInView(node) {
+  if (!node) return;
+  const nav = document.querySelector(".app-nav");
+  const targetTop = (nav?.getBoundingClientRect().bottom ?? 0) + 12;
+  const delta = node.getBoundingClientRect().top - targetTop;
+  if (Math.abs(delta) < 4) return;
+
+  const scroller = scrollParent(node);
+  const scrollingRoot = document.scrollingElement || document.documentElement;
+  if (scroller === scrollingRoot || scroller === document.body) {
+    window.scrollTo({ top: Math.max(0, window.scrollY + delta), behavior: "auto" });
+    return;
+  }
+  scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta), behavior: "auto" });
+}
+
+function scrollParent(node) {
+  let parent = node.parentElement;
+  while (parent) {
+    const overflowY = getComputedStyle(parent).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") && parent.scrollHeight > parent.clientHeight + 1) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+export function TradingCharts({ data, focusToken = 0, metrics, onSelectTrade, run, selectedTrade, theme }) {
   const priceRef = useRef(null);
   const equityRef = useRef(null);
   const drawdownRef = useRef(null);
@@ -19,7 +105,18 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
   const chartsRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
   const [drawing, setDrawing] = useState(null);
+  const [framed, setFramed] = useState(false);
   const [tools, setTools] = useState({ crosshair: true, tradePath: true });
+  const onSelectTradeRef = useRef(onSelectTrade);
+  const framedRef = useRef(false);
+  const seenDataRef = useRef(null);
+  const appliedFocusToken = useRef(0);
+  onSelectTradeRef.current = onSelectTrade;
+  if (seenDataRef.current !== data) {
+    seenDataRef.current = data;
+    framedRef.current = false;
+    if (framed) setFramed(false);
+  }
 
   useEffect(() => {
     if (!priceRef.current || !equityRef.current || !drawdownRef.current) return undefined;
@@ -95,6 +192,19 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
     volumeSeries.setData(data.volume);
     volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
+    const emaPoints = emaLine(data.candles);
+    const emaByTime = new Map(emaPoints.map((point) => [point.time, point.value]));
+    const emaSeries = priceChart.addSeries(LineSeries, {
+      color: theme === "dark" ? "#e0a82e" : "#c47d00",
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: true,
+      crosshairMarkerRadius: 3,
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+    });
+    emaSeries.setData(emaPoints);
+
     createSeriesMarkers(
       candleSeries,
       data.trades.flatMap((trade) => [
@@ -157,7 +267,10 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
       const x2 = priceChart.timeScale().timeToCoordinate(trade.exitTime);
       const y1 = candleSeries.priceToCoordinate(trade.entryPrice);
       const y2 = candleSeries.priceToCoordinate(trade.exitPrice);
-      if ([x1, x2, y1, y2].some((point) => point === null)) return;
+      if ([x1, x2, y1, y2].some((point) => point === null)) {
+        setDrawing(null);
+        return;
+      }
 
       const left = Math.min(x1, x2);
       const top = Math.min(y1, y2);
@@ -188,6 +301,16 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
     };
 
     const selectedTradeRef = { current: selectedTrade };
+    const focusTrade = (trade, { pin = false } = {}) => {
+      const range = visibleRangeForTrade(data.candles, trade);
+      if (!range) return;
+      selectedTradeRef.current = trade;
+      candleSeries.priceScale().setAutoScale(true);
+      priceChart.timeScale().setVisibleLogicalRange(range);
+      updateDrawing();
+      if (pin) pinChartInView(priceRef.current?.closest(".chart-stack"));
+      requestAnimationFrame(updateDrawing);
+    };
     const syncRange = (source, targets) => {
       source.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (!range || syncing) return;
@@ -203,6 +326,7 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
       equityChart,
       drawdownChart,
       candleSeries,
+      focusTrade,
       updateDrawing: () => updateDrawing(),
       selectedTradeRef,
     };
@@ -211,17 +335,21 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
     syncRange(equityChart, [priceChart, drawdownChart]);
     syncRange(drawdownChart, [priceChart, equityChart]);
 
-    priceChart.timeScale().fitContent();
-    equityChart.timeScale().fitContent();
-    drawdownChart.timeScale().fitContent();
+    if (framedRef.current && selectedTradeRef.current) {
+      focusTrade(selectedTradeRef.current);
+    } else {
+      priceChart.timeScale().fitContent();
+      equityChart.timeScale().fitContent();
+      drawdownChart.timeScale().fitContent();
+    }
 
     priceChart.subscribeClick((param) => {
       if (!param.time) return;
       const nearest = data.trades.reduce((best, trade) => {
         const distance = Math.min(Math.abs(trade.entryTime - param.time), Math.abs(trade.exitTime - param.time));
         return distance < best.distance ? { trade, distance } : best;
-      }, { trade: selectedTrade, distance: Number.POSITIVE_INFINITY });
-      if (nearest.distance < 1800 && nearest.trade) onSelectTrade(nearest.trade);
+      }, { trade: selectedTradeRef.current, distance: Number.POSITIVE_INFINITY });
+      if (nearest.distance < 1800 && nearest.trade) onSelectTradeRef.current?.(nearest.trade);
     });
 
     priceChart.subscribeCrosshairMove((param) => {
@@ -236,27 +364,48 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
         x: Math.min(param.point.x + 18, priceRef.current.clientWidth - 220),
         y: Math.max(param.point.y - 16, 16),
         candle,
+        ema: emaByTime.get(candle.time),
         trade: hoverTrade,
       });
     });
 
+    const resizeObserver = new ResizeObserver(() => updateDrawing());
+    resizeObserver.observe(priceRef.current);
     window.addEventListener("resize", updateDrawing);
     requestAnimationFrame(updateDrawing);
 
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener("resize", updateDrawing);
       priceChart.remove();
       equityChart.remove();
       drawdownChart.remove();
       chartsRef.current = null;
     };
-  }, [data, onSelectTrade, selectedTrade, theme, tools.crosshair]);
+  }, [data, theme, tools.crosshair]);
 
-  useEffect(() => {
-    if (!chartsRef.current) return;
-    chartsRef.current.selectedTradeRef.current = selectedTrade;
-    requestAnimationFrame(chartsRef.current.updateDrawing);
-  }, [selectedTrade]);
+  useLayoutEffect(() => {
+    const charts = chartsRef.current;
+    if (!charts) return;
+    charts.selectedTradeRef.current = selectedTrade;
+    if (!selectedTrade || !focusToken || focusToken === appliedFocusToken.current) {
+      charts.updateDrawing();
+      return;
+    }
+    appliedFocusToken.current = focusToken;
+    framedRef.current = true;
+    setFramed(true);
+    charts.focusTrade(selectedTrade, { pin: true });
+  }, [focusToken, selectedTrade]);
+
+  const fitAll = () => {
+    const charts = chartsRef.current;
+    framedRef.current = false;
+    setFramed(false);
+    if (!charts) return;
+    charts.candleSeries.priceScale().setAutoScale(true);
+    charts.priceChart.timeScale().fitContent();
+  };
 
   const lastCandle = data.candles.at(-1);
   const priorCandle = data.candles.at(-2);
@@ -267,11 +416,17 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
   const changePct = priorCandle ? change / priorCandle.close : 0;
 
   return (
-    <section className="chart-stack" aria-label="Strategy chart workspace">
+    <section className={framed ? "chart-stack framed" : "chart-stack"} aria-label="Strategy chart workspace">
       <div className="chart-toolbar">
         <div>
           <span className="chart-title">{run?.market ?? "-"} {run?.timeframe ?? "-"}</span>
-          {lastCandle && (
+          {framed && selectedTrade ? (
+            <>
+              <span className="chart-focus">Trade #{selectedTrade.id}</span>
+              <span className="ohlc">{selectedTrade.side} {price(selectedTrade.entryPrice)} → {price(selectedTrade.exitPrice)}</span>
+              <span className={selectedTrade.pnlClass}>{money(selectedTrade.pnl)} · {selectedTrade.r}R</span>
+            </>
+          ) : lastCandle && (
             <>
               <span className="ohlc">O {price(lastCandle.open)}</span>
               <span className="ohlc">H {price(lastCandle.high)}</span>
@@ -282,6 +437,8 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
           )}
         </div>
         <div className="tool-group" aria-label="Chart tools">
+          <span className="ema-legend">EMA 20</span>
+          <button type="button" onClick={fitAll}>Fit</button>
           {["crosshair", "tradePath"].map((tool) => (
             <button
               className={tools[tool] ? "active" : ""}
@@ -315,6 +472,7 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
             <div><span>High</span><b>{price(tooltip.candle.high)}</b></div>
             <div><span>Low</span><b>{price(tooltip.candle.low)}</b></div>
             <div><span>Close</span><b>{price(tooltip.candle.close)}</b></div>
+            {tooltip.ema != null && <div><span>EMA 20</span><b>{price(tooltip.ema)}</b></div>}
             {tooltip.trade && (
               <div className="tooltip-trade">
                 <strong>Trade {tooltip.trade.id}</strong>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { TradingCharts } from "../components/charts/TradingCharts";
 import { RunAnalysisRail } from "../components/detail/RunAnalysisRail";
 import { TradeTable } from "../components/detail/TradeTable";
@@ -16,7 +16,13 @@ export function StrategyDetailPage({
   theme,
 }) {
   const [tradeFilter, setTradeFilter] = useState("All");
+  const [focusToken, setFocusToken] = useState(0);
   const selectedRun = runs.find((run) => run.id === selectedRunId);
+  const selectTrade = useCallback((trade) => {
+    if (!trade) return;
+    setSelectedTrade(trade);
+    setFocusToken((token) => token + 1);
+  }, [setSelectedTrade]);
 
   const visibleTrades = data.trades.filter((trade) => {
     if (tradeFilter === "All") return true;
@@ -61,8 +67,9 @@ export function StrategyDetailPage({
         <div className="primary-column">
           <TradingCharts
             data={data}
+            focusToken={focusToken}
             metrics={detail?.rawMetrics}
-            onSelectTrade={setSelectedTrade}
+            onSelectTrade={selectTrade}
             run={selectedRun}
             selectedTrade={selectedTrade}
             theme={theme}
@@ -86,13 +93,13 @@ export function StrategyDetailPage({
                 ))}
               </div>
             </div>
-            <TradeTable visibleTrades={visibleTrades} selectedTrade={selectedTrade} setSelectedTrade={setSelectedTrade} />
+            <TradeTable visibleTrades={visibleTrades} selectedTrade={selectedTrade} setSelectedTrade={selectTrade} />
           </section>
         </div>
         <RunAnalysisRail
           data={data}
           detail={detail}
-          onSelectTrade={setSelectedTrade}
+          onSelectTrade={selectTrade}
           run={selectedRun}
         />
       </div>

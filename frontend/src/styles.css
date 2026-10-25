@@ -811,6 +811,38 @@ dd {
 .chart-stack {
   overflow: hidden;
   min-width: 0;
+  scroll-margin-top: 96px;
+}
+
+.chart-stack.framed {
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--cyan) 32%, transparent);
+}
+
+.chart-focus {
+  margin-right: 10px;
+  color: var(--cyan);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ema-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+  color: var(--amber);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ema-legend::before {
+  content: "";
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--amber);
 }
 
 .chart-toolbar {
@@ -860,6 +892,10 @@ dd {
   position: relative;
   height: 410px;
   background: var(--panel-solid);
+}
+
+.chart-stack.framed .price-chart-wrap {
+  height: 520px;
 }
 
 .price-chart,
@@ -1180,7 +1216,8 @@ td {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .price-chart-wrap {
-    height: 360px;
+  .price-chart-wrap,
+  .chart-stack.framed .price-chart-wrap {
+    height: 420px;
   }
 }
