@@ -83,11 +83,22 @@ class SimBroker:
         )
         return FillEvent(fill=fill, order_id=order.order_id, index=bar_index)
 
-    def create_order(self, symbol: str, side: Side, qty: float, order_type: OrderType) -> Order:
+    def create_order(
+        self,
+        symbol: str,
+        side: Side,
+        qty: float,
+        order_type: OrderType,
+        *,
+        limit_price: float | None = None,
+        stop_price: float | None = None,
+    ) -> Order:
         return Order(
             order_id=self._next_id(),
             symbol=symbol,
             side=side,
             order_type=order_type,
             qty=qty,
+            limit_price=limit_price,
+            stop_price=stop_price,
         )

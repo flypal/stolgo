@@ -135,6 +135,10 @@ class Engine:
                     entry_size_pct=vector_entry_size_pct,
                 )
 
+            if ctx.consume_cancel_all():
+                for o in broker.open_orders():
+                    broker.cancel(o.order_id)
+
             for intent in ctx.consume_intents():
                 accepted = apply_risk(intent, portfolio, equity_vals, self._config)
                 if accepted is None:
@@ -153,7 +157,14 @@ class Engine:
                 )
                 if qty <= 0:
                     continue
-                order = broker.create_order(symbol, accepted.side, qty, accepted.order_type)
+                order = broker.create_order(
+                    symbol,
+                    accepted.side,
+                    qty,
+                    accepted.order_type,
+                    limit_price=accepted.limit_price,
+                    stop_price=accepted.stop_price,
+                )
                 broker.submit(order)
 
         strategy.on_end(ctx)

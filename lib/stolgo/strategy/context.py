@@ -67,30 +67,68 @@ class Context:
     exits: np.ndarray | None = None
     instrument: Instrument = field(default_factory=Spot)
     _intents: list[OrderIntent] = field(default_factory=list)
+    _cancel_all: bool = False
 
-    def buy(self, *, qty: float | None = None, size_pct: float | None = None, tag: str | None = None) -> OrderIntent:
+    def _order(
+        self,
+        side: Side,
+        qty: float | None,
+        size_pct: float | None,
+        stop_price: float | None,
+        limit_price: float | None,
+        tag: str | None,
+    ) -> OrderIntent:
+        if stop_price is not None and limit_price is not None:
+            raise ValueError("stop-limit orders are not supported; pass stop_price or limit_price")
+        if stop_price is not None:
+            order_type = OrderType.STOP
+        elif limit_price is not None:
+            order_type = OrderType.LIMIT
+        else:
+            order_type = OrderType.MARKET
         intent = OrderIntent(
             symbol=self.position.symbol,
-            side=Side.BUY,
-            order_type=OrderType.MARKET,
+            side=side,
+            order_type=order_type,
             qty=qty,
             size_pct=size_pct,
+            limit_price=limit_price,
+            stop_price=stop_price,
             tag=tag,
         )
         self._intents.append(intent)
         return intent
 
-    def sell(self, *, qty: float | None = None, size_pct: float | None = None, tag: str | None = None) -> OrderIntent:
-        intent = OrderIntent(
-            symbol=self.position.symbol,
-            side=Side.SELL,
-            order_type=OrderType.MARKET,
-            qty=qty,
-            size_pct=size_pct,
-            tag=tag,
-        )
-        self._intents.append(intent)
-        return intent
+    def buy(
+        self,
+        *,
+        qty: float | None = None,
+        size_pct: float | None = None,
+        stop_price: float | None = None,
+        limit_price: float | None = None,
+        tag: str | None = None,
+    ) -> OrderIntent:
+        return self._order(Side.BUY, qty, size_pct, stop_price, limit_price, tag)
+
+    def sell(
+        self,
+        *,
+        qty: float | None = None,
+        size_pct: float | None = None,
+        stop_price: float | None = None,
+        limit_price: float | None = None,
+        tag: str | None = None,
+    ) -> OrderIntent:
+        return self._order(Side.SELL, qty, size_pct, stop_price, limit_price, tag)
+
+    def cancel_all(self) -> None:
+        """Cancel every unfilled order before this bar's new orders are submitted."""
+        self._cancel_all = True
+
+    def consume_cancel_all(self) -> bool:
+        out = self._cancel_all
+        self._cancel_all = False
+        return out
 
     def close(self, *, tag: str | None = None) -> OrderIntent | None:
         if self.position.flat:

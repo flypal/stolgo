@@ -58,6 +58,7 @@ export function TradingCharts({ data, metrics, onSelectTrade, run, selectedTrade
         borderColor: chartTheme.border,
         timeVisible: true,
         secondsVisible: false,
+        minBarSpacing: 0.01,
         tickMarkFormatter: (time) => timeLabel(time),
       },
       crosshair: {
