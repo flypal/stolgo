@@ -10,7 +10,7 @@ import {
   createSeriesMarkers,
 } from "lightweight-charts";
 import { chartColors } from "../../data/constants";
-import { dateLabel, money, percent, price, timeLabel } from "../../utils/formatters";
+import { dateLabel, money, percent, price, rMultiple, timeLabel } from "../../utils/formatters";
 
 const EMA_PERIOD = 20;
 
@@ -424,7 +424,7 @@ export function TradingCharts({ data, focusToken = 0, metrics, onSelectTrade, ru
             <>
               <span className="chart-focus">Trade #{selectedTrade.id}</span>
               <span className="ohlc">{selectedTrade.side} {price(selectedTrade.entryPrice)} → {price(selectedTrade.exitPrice)}</span>
-              <span className={selectedTrade.pnlClass}>{money(selectedTrade.pnl)} · {selectedTrade.r}R</span>
+              <span className={selectedTrade.pnlClass}>{money(selectedTrade.pnl)} · {rMultiple(selectedTrade.r)}</span>
             </>
           ) : lastCandle && (
             <>
@@ -476,7 +476,7 @@ export function TradingCharts({ data, focusToken = 0, metrics, onSelectTrade, ru
             {tooltip.trade && (
               <div className="tooltip-trade">
                 <strong>Trade {tooltip.trade.id}</strong>
-                <span className={tooltip.trade.pnlClass}>{money(tooltip.trade.pnl)} · {tooltip.trade.r}R</span>
+                <span className={tooltip.trade.pnlClass}>{money(tooltip.trade.pnl)} · {rMultiple(tooltip.trade.r)}</span>
               </div>
             )}
           </div>

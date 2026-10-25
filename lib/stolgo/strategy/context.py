@@ -57,6 +57,19 @@ class BarDataView:
             return self._index[: self._limit + 1]
         return pd.DatetimeIndex(range(self._limit + 1), tz="UTC")
 
+    def frame(self) -> pd.DataFrame:
+        """Visible bars as an OHLCV DataFrame, e.g. for ``stolgo.pa`` rules and levels."""
+        return pd.DataFrame(
+            {
+                "open": self.open,
+                "high": self.high,
+                "low": self.low,
+                "close": self.close,
+                "volume": self.volume,
+            },
+            index=self.index,
+        )
+
 
 @dataclass
 class Context:

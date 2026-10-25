@@ -78,3 +78,21 @@ def test_all_of_any_of() -> None:
 
 
 import numpy as np
+
+
+def test_frame_exposes_only_visible_bars(synthetic_100bars_df: pd.DataFrame) -> None:
+    arrays = BarArrays.from_dataframe(synthetic_100bars_df)
+    view = BarDataView(
+        _open=arrays.open,
+        _high=arrays.high,
+        _low=arrays.low,
+        _close=arrays.close,
+        _volume=arrays.volume,
+        _limit=9,
+        _index=synthetic_100bars_df.index,
+    )
+    frame = view.frame()
+    assert list(frame.columns) == ["open", "high", "low", "close", "volume"]
+    assert len(frame) == 10
+    assert frame.index[-1] == synthetic_100bars_df.index[9]
+    assert frame["close"].tolist() == synthetic_100bars_df["close"].iloc[:10].tolist()

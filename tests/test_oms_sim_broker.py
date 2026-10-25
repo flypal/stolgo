@@ -101,3 +101,10 @@ def test_exit_legs_follow_fill_price():
     legs = {o.order_type: o for o in broker.open_orders()}
     assert legs[OrderType.STOP].stop_price == 10.0
     assert legs[OrderType.LIMIT].limit_price == 14.0
+
+
+def test_entry_fill_carries_its_stop_loss():
+    broker = _broker()
+    _long_bracket(broker, exits_ref=11.0)
+    (entry,) = broker.match(_bar(12, 12.5, 11.5, 12), bar_index=1)
+    assert entry.stop_loss == 10.0

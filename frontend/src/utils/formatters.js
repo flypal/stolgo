@@ -33,6 +33,10 @@ export function timeLabel(timestamp) {
   });
 }
 
+export function rMultiple(value) {
+  return value == null ? "—" : `${value}R`;
+}
+
 export function percent(value) {
   return `${(value * 100).toFixed(2)}%`;
 }

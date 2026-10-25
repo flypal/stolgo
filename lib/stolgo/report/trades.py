@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pandas as pd
@@ -17,11 +18,13 @@ TRADE_COLUMNS: tuple[str, ...] = (
     "side",
     "entry_price",
     "exit_price",
+    "stop_loss",
     "qty",
     "multiplier",
     "gross_pnl",
     "net_pnl",
     "commission",
+    "initial_risk",
     "r_multiple",
     "tag",
 )
@@ -34,10 +37,15 @@ class _Lot:
     qty: float
     entry_commission: float
     direction: float
+    stop_loss: float | None
 
 
 def build_trades_from_fills(fills: list[FillEvent], *, multiplier: float = 1.0) -> pd.DataFrame:
-    """FIFO-match opposing fills into long and short round trips."""
+    """FIFO-match opposing fills into long and short round trips.
+
+    ``r_multiple`` is net PnL over the initial risk between entry and the bracket stop;
+    trades opened without a stop have NaN risk and R.
+    """
     lots: list[_Lot] = []
     rows: list[dict] = []
 
@@ -55,8 +63,10 @@ def build_trades_from_fills(fills: list[FillEvent], *, multiplier: float = 1.0) 
             exit_comm_part = commission_per_unit * match_qty
             gross = (f.price - lot.entry_price) * match_qty * lot.direction * multiplier
             net = gross - entry_comm_part - exit_comm_part
-            risk = lot.entry_price * match_qty * multiplier
-            r_multiple = net / risk if risk > 0 else 0.0
+            risk = math.nan
+            if lot.stop_loss is not None:
+                risk = abs(lot.entry_price - lot.stop_loss) * match_qty * multiplier
+            r_multiple = net / risk if risk > 0 else math.nan
 
             rows.append(
                 {
@@ -65,11 +75,13 @@ def build_trades_from_fills(fills: list[FillEvent], *, multiplier: float = 1.0) 
                     "side": "long" if lot.direction > 0 else "short",
                     "entry_price": lot.entry_price,
                     "exit_price": f.price,
+                    "stop_loss": math.nan if lot.stop_loss is None else lot.stop_loss,
                     "qty": match_qty,
                     "multiplier": multiplier,
                     "gross_pnl": gross,
                     "net_pnl": net,
                     "commission": entry_comm_part + exit_comm_part,
+                    "initial_risk": risk,
                     "r_multiple": r_multiple,
                     "tag": f.order_id,
                 }
@@ -89,6 +101,7 @@ def build_trades_from_fills(fills: list[FillEvent], *, multiplier: float = 1.0) 
                     qty=remaining,
                     entry_commission=commission_per_unit * remaining,
                     direction=direction,
+                    stop_loss=fe.stop_loss,
                 )
             )
 

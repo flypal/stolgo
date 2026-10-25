@@ -49,3 +49,10 @@ def test_crosses_below() -> None:
     )
     s = pa.crosses_below(pa.level(10.0)).series(df)
     assert s.iloc[2]
+
+
+def test_touched_requires_bar_range_to_reach_level() -> None:
+    df = _df()
+    assert pa.touched(pa.level(11.8), pct=0.0).series(df).tolist() == [False, False, True, False, False]
+    assert not pa.touched(pa.level(20.0)).series(df).any()
+    assert pa.level(11.8).touches(df, tol_pct=0.0)["touched"].tolist() == [False, False, True, False, False]

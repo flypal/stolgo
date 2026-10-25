@@ -98,6 +98,10 @@ def test_series_and_trades_match_frontend_mock_shapes(tmp_path) -> None:
     }
     assert trades[0]["side"] == "Long"
     assert isinstance(trades[0]["entryTime"], int)
+    assert trades[0]["r"] == -0.25
+
+    trades_df["r_multiple"] = [float("nan")]
+    assert adapters.trades(trades_df)[0]["r"] is None
 
 
 def test_adapters_read_existing_output_dir_shape() -> None:

@@ -184,3 +184,20 @@ def test_bracket_exits_without_strategy_and_manual_close_cancels_legs() -> None:
         (Side.SELL, 11.0),
     ]
     assert result.positions["qty"].iloc[-1] == 0.0
+
+
+def test_bracket_trade_reports_r_from_its_stop() -> None:
+    from stolgo.ui import adapters
+
+    class Bracketed(Strategy):
+        def on_bar(self, ctx: Context) -> None:
+            if ctx.i == 1:
+                ctx.buy(qty=2.0, stop_price=11.0, stop_loss=9.0, take_profit=13.0)
+
+    df = _bars([10, 10, 12, 14], [9, 9, 10, 12])
+    result = Backtest(Bracketed(), df, cash=1_000, commission=0.0).run()
+    row = result.trades.iloc[0]
+    assert (row["entry_price"], row["exit_price"], row["stop_loss"]) == (11.0, 13.0, 9.0)
+    assert row["initial_risk"] == pytest.approx(4.0)
+    assert row["r_multiple"] == pytest.approx(1.0)
+    assert adapters.trades(result.trades)[0]["r"] == 1.0

@@ -74,6 +74,7 @@ def trades(trades_df) -> list[dict]:
     out = []
     for index, row in trades_df.iterrows():
         pnl = float(row.get("net_pnl", 0.0))
+        r = row.get("r_multiple")
         out.append(
             {
                 "id": int(index) + 1,
@@ -83,7 +84,7 @@ def trades(trades_df) -> list[dict]:
                 "exitPrice": float(row["exit_price"]),
                 "qty": float(row["qty"]),
                 "pnl": pnl,
-                "r": round(float(row.get("r_multiple", 0.0)), 2),
+                "r": None if pd.isna(r) else round(float(r), 2),
                 "side": "Short" if row.get("side") == "short" else "Long",
                 "tag": row.get("tag") or "",
                 "pnlClass": "positive" if pnl >= 0 else "negative",

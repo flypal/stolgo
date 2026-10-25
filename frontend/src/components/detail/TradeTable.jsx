@@ -1,4 +1,4 @@
-import { dateLabel, money, price } from "../../utils/formatters";
+import { dateLabel, money, price, rMultiple } from "../../utils/formatters";
 
 export function TradeTable({ selectedTrade, setSelectedTrade, visibleTrades }) {
   return (
@@ -15,7 +15,7 @@ export function TradeTable({ selectedTrade, setSelectedTrade, visibleTrades }) {
               <td>{trade.id}</td><td>{dateLabel(trade.entryTime)}</td><td>{dateLabel(trade.exitTime)}</td>
               <td className={trade.side === "Long" ? "positive" : "negative"}>{trade.side}</td>
               <td>{price(trade.entryPrice)}</td><td>{price(trade.exitPrice)}</td><td>{trade.qty}</td>
-              <td className={trade.pnlClass}>{money(trade.pnl)}</td><td className={trade.pnlClass}>{trade.r}R</td><td>{trade.tag}</td>
+              <td className={trade.pnlClass}>{money(trade.pnl)}</td><td className={trade.pnlClass}>{rMultiple(trade.r)}</td><td>{trade.tag}</td>
             </tr>
           ))}
           {visibleTrades.length === 0 && (

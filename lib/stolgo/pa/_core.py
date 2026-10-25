@@ -40,7 +40,7 @@ class Level:
         lv = self.values(ohlcv)
         high = ohlcv["high"]
         low = ohlcv["low"]
-        touched = (high >= lv * (1 - tol_pct)) | (low <= lv * (1 + tol_pct))
+        touched = (high >= lv * (1 - tol_pct)) & (low <= lv * (1 + tol_pct))
         return pd.DataFrame({"level": lv, "touched": touched}, index=ohlcv.index)
 
 
@@ -69,22 +69,9 @@ class Rule(ABC):
         return self.series(df).to_numpy(dtype=bool)
 
     def __call__(self, ctx: Context) -> bool:
-        data = ctx.data
-        n = len(data)
-        if n == 0:
+        if len(ctx.data) == 0:
             return False
-        df = pd.DataFrame(
-            {
-                "open": data.open,
-                "high": data.high,
-                "low": data.low,
-                "close": data.close,
-                "volume": data.volume,
-            },
-            index=data.index,
-        )
-        s = self.series(df)
-        return bool(s.iloc[-1])
+        return bool(self.series(ctx.data.frame()).iloc[-1])
 
     def __and__(self, other: Rule) -> Rule:
         return AndRule(self, other)

@@ -91,7 +91,7 @@ def touched(lv: Level | float, pct: float = 0.002) -> Rule:
 
     def fn(ohlcv: pd.DataFrame) -> pd.Series:
         v = L.values(ohlcv)
-        return (ohlcv["high"] >= v * (1 - pct)) | (ohlcv["low"] <= v * (1 + pct))
+        return (ohlcv["high"] >= v * (1 - pct)) & (ohlcv["low"] <= v * (1 + pct))
 
     return rule_from_series("touched", fn)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Literal
 from uuid import uuid4
 
@@ -92,8 +93,11 @@ class SimBroker:
             self._net = 0.0
             self._book.drop_exit_legs()
 
-        events = [fe]
         legs = self._exit_legs(order, fe.fill)
+        stops = [leg.stop_price for leg in legs if leg.order_type == OrderType.STOP]
+        if stops:
+            fe = replace(fe, stop_loss=stops[0])
+        events = [fe]
         if legs_start is not None:
             for leg in legs:
                 leg_price = touch_price(leg, bar, legs_start)

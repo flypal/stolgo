@@ -11,6 +11,12 @@ from stolgo.pa._level_util import prep_ohlcv
 from stolgo.pa._mtf import level_on_base
 
 
+def _confirm_delay(half: int, tf: str | None) -> int:
+    # A pivot is only known once ``half`` later bars have closed; higher-TF bars are
+    # labelled at their open, so they need one more bar before they are complete.
+    return half + (1 if tf is not None else 0)
+
+
 def swing_high(lookback: int = 5, *, tf: str | None = None) -> Level:
     half = max(1, lookback // 2)
 
@@ -23,7 +29,7 @@ def swing_high(lookback: int = 5, *, tf: str | None = None) -> Level:
             window = h.iloc[i - half : i + half + 1]
             if h.iloc[i] == window.max():
                 out.iloc[i] = h.iloc[i]
-        return level_on_base(base, tf, work, out.ffill())
+        return level_on_base(base, tf, work, out.shift(_confirm_delay(half, tf)).ffill())
 
     return Level(name=f"swing_high({lookback})", _compute=compute, tf=tf)
 
@@ -40,7 +46,7 @@ def swing_low(lookback: int = 5, *, tf: str | None = None) -> Level:
             window = l.iloc[i - half : i + half + 1]
             if l.iloc[i] == window.min():
                 out.iloc[i] = l.iloc[i]
-        return level_on_base(base, tf, work, out.ffill())
+        return level_on_base(base, tf, work, out.shift(_confirm_delay(half, tf)).ffill())
 
     return Level(name=f"swing_low({lookback})", _compute=compute, tf=tf)
 

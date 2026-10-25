@@ -31,6 +31,8 @@ class FillEvent:
     fill: Fill
     order_id: OrderId
     index: int
+    # Protective stop placed by this fill's bracket; defines 1R for the trade it opens.
+    stop_loss: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

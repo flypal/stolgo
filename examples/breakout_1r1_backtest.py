@@ -40,7 +40,6 @@ import numpy as np
 import pandas as pd
 
 from stolgo import Backtest, Bandl, Context, Strategy, trade
-from stolgo.core.events import FillEvent
 from stolgo.report.exporters import export_all
 from stolgo.signals import ema
 
@@ -60,20 +59,12 @@ class BreakoutConfig:
 class DonchianBreakout1R1(Strategy):
     def __init__(self, cfg: BreakoutConfig) -> None:
         self.cfg = cfg
-        self._risk_per_unit = 0.0
-        self.planned_risk: dict[pd.Timestamp, float] = {}
 
     def on_start(self, ctx: Context) -> None:
         self._ema = ema(ctx.data.close, self.cfg.ema_period)
         self._tick = self.cfg.tick or getattr(ctx.instrument, "price_tick", 0.0)
         if not self._tick or self._tick <= 0:
             raise ValueError("price tick unknown: set BreakoutConfig.tick (--tick)")
-
-    def on_fill(self, ctx: Context, fill: FillEvent) -> None:
-        f = fill.fill
-        if not ctx.position.flat:
-            ts = pd.Timestamp(f.ts, unit="ns", tz="UTC")
-            self.planned_risk[ts] = self._risk_per_unit * f.qty * ctx.instrument.multiplier
 
     def on_bar(self, ctx: Context) -> None:
         n = self.cfg.lookback
@@ -100,11 +91,10 @@ class DonchianBreakout1R1(Strategy):
         pullback = self.cfg.anchor == "pullback"
         price = edge if pullback else trigger
         center = trigger if self.cfg.anchor == "entry" else edge
-        stop_loss = center - direction * x
         place = trade.buy_bracket if direction > 0 else trade.sell_bracket
-        intent = place(
+        place(
             ctx,
-            stop_loss=stop_loss,
+            stop_loss=center - direction * x,
             take_profit=center + direction * x,
             limit_price=price if pullback else None,
             stop_price=None if pullback else price,
@@ -114,8 +104,6 @@ class DonchianBreakout1R1(Strategy):
             cash=self.cfg.cash,
             tag="breakout_long" if direction > 0 else "breakout_short",
         )
-        if intent is not None:
-            self._risk_per_unit = abs(price - stop_loss)
 
 
 def load_data(args: argparse.Namespace) -> tuple[pd.DataFrame, object | None]:
@@ -140,12 +128,11 @@ def load_data(args: argparse.Namespace) -> tuple[pd.DataFrame, object | None]:
     return df, instrument
 
 
-def print_r_stats(trades: pd.DataFrame, planned_risk: dict[pd.Timestamp, float]) -> None:
+def print_r_stats(trades: pd.DataFrame) -> None:
     if trades.empty:
         print("No completed trades.")
         return
-    risk = trades["entry_ts"].map(planned_risk)
-    r = trades["net_pnl"] / risk
+    r = trades["r_multiple"]
     wins = int((trades["net_pnl"] > 0).sum())
     print(f"trades {len(trades)}  wins {wins}  losses {len(trades) - wins}  win_rate {wins / len(trades):.1%}")
     print(f"realized R  mean {r.mean():+.3f}  median win {r[r > 0].median():+.3f}  median loss {r[r <= 0].median():+.3f}")
@@ -198,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
     ).run()
 
     print(result.summary())
-    print_r_stats(result.trades, strategy.planned_risk)
+    print_r_stats(result.trades)
 
     slug = f"{args.symbol.lower().replace('.', '-')}-{args.interval}-{cfg.anchor}"
     output = args.output or Path("runs") / f"breakout-1r1-{slug}"
