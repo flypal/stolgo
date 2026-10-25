@@ -77,6 +77,10 @@ class Context:
         stop_price: float | None,
         limit_price: float | None,
         tag: str | None,
+        valid_bars: int | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        exits_follow_fill: bool = False,
     ) -> OrderIntent:
         if stop_price is not None and limit_price is not None:
             raise ValueError("stop-limit orders are not supported; pass stop_price or limit_price")
@@ -95,6 +99,10 @@ class Context:
             limit_price=limit_price,
             stop_price=stop_price,
             tag=tag,
+            valid_bars=valid_bars,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            exits_follow_fill=exits_follow_fill,
         )
         self._intents.append(intent)
         return intent
@@ -107,8 +115,20 @@ class Context:
         stop_price: float | None = None,
         limit_price: float | None = None,
         tag: str | None = None,
+        valid_bars: int | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        exits_follow_fill: bool = False,
     ) -> OrderIntent:
-        return self._order(Side.BUY, qty, size_pct, stop_price, limit_price, tag)
+        """Queue a buy. ``valid_bars`` auto-cancels it if unfilled after that many bars.
+
+        ``stop_loss`` / ``take_profit`` attach OCO exit orders that go live on fill; with
+        ``exits_follow_fill`` they keep their distance from the actual fill price.
+        """
+        return self._order(
+            Side.BUY, qty, size_pct, stop_price, limit_price, tag,
+            valid_bars, stop_loss, take_profit, exits_follow_fill,
+        )
 
     def sell(
         self,
@@ -118,8 +138,16 @@ class Context:
         stop_price: float | None = None,
         limit_price: float | None = None,
         tag: str | None = None,
+        valid_bars: int | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        exits_follow_fill: bool = False,
     ) -> OrderIntent:
-        return self._order(Side.SELL, qty, size_pct, stop_price, limit_price, tag)
+        """Queue a sell; options as in :meth:`buy`."""
+        return self._order(
+            Side.SELL, qty, size_pct, stop_price, limit_price, tag,
+            valid_bars, stop_loss, take_profit, exits_follow_fill,
+        )
 
     def cancel_all(self) -> None:
         """Cancel every unfilled order before this bar's new orders are submitted."""

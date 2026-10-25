@@ -148,7 +148,9 @@ class Engine:
                     accepted, portfolio, bar.close, capital, multiplier=inst.multiplier
                 )
                 pending = sum(
-                    o.qty if o.side == Side.BUY else -o.qty for o in broker.open_orders()
+                    o.qty if o.side == Side.BUY else -o.qty
+                    for o in broker.open_orders()
+                    if o.oco_id is None
                 )
                 qty = inst.round_qty(
                     portfolio.clamp_order_qty(
@@ -157,6 +159,13 @@ class Engine:
                 )
                 if qty <= 0:
                     continue
+                exits_ref = None
+                if accepted.exits_follow_fill:
+                    exits_ref = next(
+                        p
+                        for p in (accepted.stop_price, accepted.limit_price, bar.close)
+                        if p is not None
+                    )
                 order = broker.create_order(
                     symbol,
                     accepted.side,
@@ -164,6 +173,11 @@ class Engine:
                     accepted.order_type,
                     limit_price=accepted.limit_price,
                     stop_price=accepted.stop_price,
+                    tag=accepted.tag,
+                    expire_index=None if accepted.valid_bars is None else i + accepted.valid_bars,
+                    stop_loss=accepted.stop_loss,
+                    take_profit=accepted.take_profit,
+                    exits_ref=exits_ref,
                 )
                 broker.submit(order)
 

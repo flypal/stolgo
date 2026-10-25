@@ -57,3 +57,23 @@ def test_close_short_issues_buy() -> None:
     intent = ctx.close(tag="cover")
     assert intent is not None
     assert intent.side == Side.BUY
+
+
+def test_buy_bracket_sizes_from_order_price_and_attaches_exits() -> None:
+    from stolgo.trade import buy_bracket
+
+    ctx = _ctx(0, (100, 101, 99, 100))
+    intent = buy_bracket(
+        ctx, stop_price=102, stop_loss=98, take_profit=106, valid_bars=1, size_risk_pct=0.01, cash=10_000
+    )
+    assert intent is not None
+    assert intent.qty == 25.0
+    assert (intent.stop_loss, intent.take_profit, intent.valid_bars) == (98, 106, 1)
+    assert intent.exits_follow_fill is False
+
+
+def test_bracket_rejects_target_behind_entry() -> None:
+    from stolgo.trade import sell_bracket
+
+    ctx = _ctx(0, (100, 101, 99, 100))
+    assert sell_bracket(ctx, stop_price=98, stop_loss=101, take_profit=99, qty=1.0) is None

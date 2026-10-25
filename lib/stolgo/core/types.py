@@ -62,6 +62,13 @@ class Order:
     status: OrderStatus = OrderStatus.PENDING
     client_order_id: str | None = None
     tag: str | None = None
+    expire_index: int | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    # When set, stop_loss/take_profit shift by (fill price - exits_ref) on fill.
+    exits_ref: float | None = None
+    # Exit legs of a filled bracket share their parent's order id; one fill cancels the rest.
+    oco_id: OrderId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,9 +106,15 @@ class OrderIntent:
     limit_price: float | None = None
     stop_price: float | None = None
     tag: str | None = None
+    valid_bars: int | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    exits_follow_fill: bool = False
 
     def __post_init__(self) -> None:
         if self.qty is not None and self.qty <= 0:
             raise ValueError("OrderIntent.qty must be positive when set")
         if self.size_pct is not None and self.size_pct <= 0:
             raise ValueError("OrderIntent.size_pct must be positive when set")
+        if self.valid_bars is not None and self.valid_bars < 1:
+            raise ValueError("OrderIntent.valid_bars must be >= 1 when set")

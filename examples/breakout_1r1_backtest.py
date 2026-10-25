@@ -11,15 +11,16 @@ Rules
 3. Range height:
    long:  x = H - close of the lowest-low bar
    short: x = close of the highest-high bar - L
-4. Entry and bracket depend on ``anchor``; every entry order lives for the bar after
-   the breakout bar only, then is cancelled and the strategy waits for the next breakout.
+4. Entry and bracket depend on ``anchor``; every entry order is valid for the bar after
+   the breakout bar only, then expires and the strategy waits for the next breakout.
    edge:     stop order at breakout high + 1 tick (low - 1 tick for shorts);
              target = H + x / L - x, stop = H - x / L + x. Skipped if the trigger
              is already beyond the target.
    entry:    same stop order; target and stop are x away from the actual fill.
    pullback: limit order back at the broken edge (H / L); same bracket as ``edge``.
-5. Exit: once a bar trades through stop or target, close at the next bar's open.
-   If one bar touches both, the stop is assumed to hit first.
+5. Exit: stop and target rest as one-cancels-other orders from the fill bar on and fill
+   at their price, or at the open if it gaps through. If one bar touches both, the stop
+   is assumed to hit first.
 6. Size: lose ``risk_pct`` of starting cash if filled at the order price and stopped out.
 
 Run:
@@ -38,7 +39,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from stolgo import Backtest, Bandl, Context, Strategy
+from stolgo import Backtest, Bandl, Context, Strategy, trade
 from stolgo.core.events import FillEvent
 from stolgo.report.exporters import export_all
 from stolgo.signals import ema
@@ -59,11 +60,7 @@ class BreakoutConfig:
 class DonchianBreakout1R1(Strategy):
     def __init__(self, cfg: BreakoutConfig) -> None:
         self.cfg = cfg
-        self._pending: tuple[int, float, float, float] | None = None
-        self._direction = 0
-        self._stop = 0.0
-        self._target = 0.0
-        self._exiting = False
+        self._risk_per_unit = 0.0
         self.planned_risk: dict[pd.Timestamp, float] = {}
 
     def on_start(self, ctx: Context) -> None:
@@ -74,29 +71,14 @@ class DonchianBreakout1R1(Strategy):
 
     def on_fill(self, ctx: Context, fill: FillEvent) -> None:
         f = fill.fill
-        if self._pending is not None:
-            self._direction, x, self._stop, self._target = self._pending
-            self._pending = None
-            if self.cfg.anchor == "entry":
-                self._stop = f.price - self._direction * x
-                self._target = f.price + self._direction * x
+        if not ctx.position.flat:
             ts = pd.Timestamp(f.ts, unit="ns", tz="UTC")
-            self.planned_risk[ts] = abs(f.price - self._stop) * f.qty * ctx.instrument.multiplier
-        elif ctx.position.flat:
-            self._direction = 0
-            self._exiting = False
+            self.planned_risk[ts] = self._risk_per_unit * f.qty * ctx.instrument.multiplier
 
     def on_bar(self, ctx: Context) -> None:
-        if not ctx.position.flat:
-            self._manage(ctx)
-            return
-        if self._pending is not None:
-            ctx.cancel_all()
-            self._pending = None
-
         n = self.cfg.lookback
         k = self.cfg.ema_slope_bars
-        if ctx.i < max(n, self.cfg.ema_period + k):
+        if not ctx.position.flat or ctx.i < max(n, self.cfg.ema_period + k):
             return
 
         high, low, close = ctx.data.high, ctx.data.low, ctx.data.close
@@ -115,36 +97,25 @@ class DonchianBreakout1R1(Strategy):
 
         if x <= 0:
             return
-        stop, target = edge - direction * x, edge + direction * x
-        if self.cfg.anchor == "edge":
-            if (target - trigger) * direction <= 0:
-                return
-            risk = (trigger - stop) * direction
-        else:
-            risk = x
-
-        qty = self.cfg.cash * self.cfg.risk_pct / (risk * ctx.instrument.multiplier)
-        self._pending = (direction, x, stop, target)
-        if self.cfg.anchor == "pullback":
-            order = {"limit_price": edge}
-        else:
-            order = {"stop_price": trigger}
-        if direction > 0:
-            ctx.buy(qty=qty, tag="breakout_long", **order)
-        else:
-            ctx.sell(qty=qty, tag="breakout_short", **order)
-
-    def _manage(self, ctx: Context) -> None:
-        if self._exiting:
-            return
-        bar_high, bar_low = ctx.data.high[-1], ctx.data.low[-1]
-        if self._direction > 0:
-            hit_stop, hit_target = bar_low <= self._stop, bar_high >= self._target
-        else:
-            hit_stop, hit_target = bar_high >= self._stop, bar_low <= self._target
-        if hit_stop or hit_target:
-            self._exiting = True
-            ctx.close(tag="stop" if hit_stop else "target")
+        pullback = self.cfg.anchor == "pullback"
+        price = edge if pullback else trigger
+        center = trigger if self.cfg.anchor == "entry" else edge
+        stop_loss = center - direction * x
+        place = trade.buy_bracket if direction > 0 else trade.sell_bracket
+        intent = place(
+            ctx,
+            stop_loss=stop_loss,
+            take_profit=center + direction * x,
+            limit_price=price if pullback else None,
+            stop_price=None if pullback else price,
+            valid_bars=1,
+            exits_from="fill" if self.cfg.anchor == "entry" else "order",
+            size_risk_pct=self.cfg.risk_pct,
+            cash=self.cfg.cash,
+            tag="breakout_long" if direction > 0 else "breakout_short",
+        )
+        if intent is not None:
+            self._risk_per_unit = abs(price - stop_loss)
 
 
 def load_data(args: argparse.Namespace) -> tuple[pd.DataFrame, object | None]:

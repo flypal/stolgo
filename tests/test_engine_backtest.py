@@ -147,3 +147,40 @@ def test_limit_entry_fills_at_limit_price() -> None:
     df = _bars([10, 10, 10, 10], [9, 9, 9, 9])
     result = Backtest(LimitEntry(), df, cash=1_000, commission=0.0).run()
     assert [(fe.fill.side, fe.fill.price) for fe in result.events] == [(Side.BUY, 9.5)]
+
+
+def test_valid_bars_expires_unfilled_entry() -> None:
+    class OneBarStop(Strategy):
+        def on_bar(self, ctx: Context) -> None:
+            if ctx.i == 1:
+                ctx.buy(qty=1.0, stop_price=11.0, valid_bars=1)
+
+    df = _bars([10, 10, 10.5, 12], [9, 9, 9.5, 10])
+    result = Backtest(OneBarStop(), df, cash=1_000, commission=0.0).run()
+    assert result.events == []
+
+
+def test_bracket_exits_without_strategy_and_manual_close_cancels_legs() -> None:
+    class Bracketed(Strategy):
+        def __init__(self, close_at: int | None) -> None:
+            self.close_at = close_at
+
+        def on_bar(self, ctx: Context) -> None:
+            if ctx.i == 1:
+                ctx.buy(qty=1.0, stop_price=11.0, stop_loss=9.0, take_profit=13.0)
+            if ctx.i == self.close_at:
+                ctx.close()
+
+    df = _bars([10, 10, 12, 12, 14], [9, 9, 10, 10, 8])
+    result = Backtest(Bracketed(None), df, cash=1_000, commission=0.0).run()
+    assert [(fe.fill.side, fe.fill.price) for fe in result.events] == [
+        (Side.BUY, 11.0),
+        (Side.SELL, 9.0),
+    ]
+
+    result = Backtest(Bracketed(2), df, cash=1_000, commission=0.0).run()
+    assert [(fe.fill.side, fe.fill.price) for fe in result.events] == [
+        (Side.BUY, 11.0),
+        (Side.SELL, 11.0),
+    ]
+    assert result.positions["qty"].iloc[-1] == 0.0

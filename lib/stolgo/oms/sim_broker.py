@@ -9,7 +9,7 @@ from stolgo.core.events import FillEvent
 from stolgo.core.types import Bar, Fill, Order, OrderType, Side
 from stolgo.oms.commission import CommissionModel
 from stolgo.oms.fill_model import FillModel
-from stolgo.oms.order_book import OrderBook
+from stolgo.oms.order_book import OrderBook, touch_price
 from stolgo.oms.slippage import SlippageModel
 
 _EMPTY_FILLS: tuple[FillEvent, ...] = ()
@@ -33,6 +33,7 @@ class SimBroker:
         self._pending: list[Order] = []
         self._book = OrderBook()
         self._seq = 0
+        self._net = 0.0
 
     def submit(self, order: Order) -> str:
         self._pending.append(order)
@@ -60,13 +61,82 @@ class SimBroker:
             if price is None:
                 still_pending.append(order)
                 continue
-            events.append(self._make_fill(order, bar, price, bar_index))
+            # A close fill is the bar's last print, so its exit legs start next bar.
+            legs_start = None if self._fill_on == "close" else price
+            events.extend(self._fill(order, bar, price, bar_index, legs_start))
         self._pending = still_pending
 
         for order, price in self._book.match(bar):
-            events.append(self._make_fill(order, bar, price, bar_index))
+            if order.oco_id is not None and self._net == 0.0:
+                continue
+            events.extend(self._fill(order, bar, price, bar_index, price))
 
+        self._pending = [
+            o for o in self._pending if o.expire_index is None or o.expire_index > bar_index
+        ]
+        self._book.expire(bar_index)
         return events if events else list(_EMPTY_FILLS)
+
+    def _fill(
+        self,
+        order: Order,
+        bar: Bar,
+        price: float,
+        bar_index: int,
+        legs_start: float | None,
+    ) -> list[FillEvent]:
+        fe = self._make_fill(order, bar, price, bar_index)
+        signed = fe.fill.qty if fe.fill.side == Side.BUY else -fe.fill.qty
+        self._net += signed
+        if abs(self._net) < 1e-12:
+            self._net = 0.0
+            self._book.drop_exit_legs()
+
+        events = [fe]
+        legs = self._exit_legs(order, fe.fill)
+        if legs_start is not None:
+            for leg in legs:
+                leg_price = touch_price(leg, bar, legs_start)
+                if leg_price is not None:
+                    events.extend(self._fill(leg, bar, leg_price, bar_index, None))
+                    return events
+        for leg in legs:
+            self._book.add(leg)
+        return events
+
+    def _exit_legs(self, parent: Order, fill: Fill) -> list[Order]:
+        if parent.stop_loss is None and parent.take_profit is None:
+            return []
+        shift = fill.price - parent.exits_ref if parent.exits_ref is not None else 0.0
+        side = Side.SELL if fill.side == Side.BUY else Side.BUY
+        legs: list[Order] = []
+        if parent.stop_loss is not None:
+            legs.append(
+                Order(
+                    order_id=self._next_id(),
+                    symbol=parent.symbol,
+                    side=side,
+                    order_type=OrderType.STOP,
+                    qty=fill.qty,
+                    stop_price=parent.stop_loss + shift,
+                    tag="stop",
+                    oco_id=parent.order_id,
+                )
+            )
+        if parent.take_profit is not None:
+            legs.append(
+                Order(
+                    order_id=self._next_id(),
+                    symbol=parent.symbol,
+                    side=side,
+                    order_type=OrderType.LIMIT,
+                    qty=fill.qty,
+                    limit_price=parent.take_profit + shift,
+                    tag="target",
+                    oco_id=parent.order_id,
+                )
+            )
+        return legs
 
     def _make_fill(self, order: Order, bar: Bar, price: float, bar_index: int) -> FillEvent:
         px = self._slippage.adjust(order.side, price, order.qty)
@@ -92,6 +162,11 @@ class SimBroker:
         *,
         limit_price: float | None = None,
         stop_price: float | None = None,
+        tag: str | None = None,
+        expire_index: int | None = None,
+        stop_loss: float | None = None,
+        take_profit: float | None = None,
+        exits_ref: float | None = None,
     ) -> Order:
         return Order(
             order_id=self._next_id(),
@@ -101,4 +176,9 @@ class SimBroker:
             qty=qty,
             limit_price=limit_price,
             stop_price=stop_price,
+            tag=tag,
+            expire_index=expire_index,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            exits_ref=exits_ref,
         )
